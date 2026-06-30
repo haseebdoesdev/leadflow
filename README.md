@@ -2,6 +2,8 @@
 
 A full-stack lead capture and automation demo built for portfolio purposes. A visitor fills out a form → Supabase stores the lead → n8n fires a webhook that fans out to Airtable, Google Sheets, Slack, and Gmail — with duplicate detection built in.
 
+**Live demo:** https://leadflow-three-tau.vercel.app
+
 ---
 
 ## Tech Stack
