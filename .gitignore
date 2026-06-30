@@ -1,0 +1,4 @@
+.env
+leadflow/node_modules/
+leadflow/.next/
+leadflow/.env.local

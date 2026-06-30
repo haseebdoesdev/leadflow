@@ -1,0 +1,162 @@
+{
+  "name": "LeadFlow — New Lead Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-received",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook — Lead Received",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "lead-received"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_duplicate }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-duplicate",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "record",
+        "operation": "create",
+        "application": {
+          "__rl": true,
+          "mode": "name",
+          "value": "LeadFlow"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $('Webhook — Lead Received').item.json.name }}",
+            "Email": "={{ $('Webhook — Lead Received').item.json.email }}",
+            "Phone": "={{ $('Webhook — Lead Received').item.json.phone }}",
+            "Company": "={{ $('Webhook — Lead Received').item.json.company }}",
+            "Role": "={{ $('Webhook — Lead Received').item.json.role }}",
+            "Status": "New",
+            "Created At": "={{ $('Webhook — Lead Received').item.json.created_at }}"
+          }
+        }
+      },
+      "id": "airtable-create",
+      "name": "Airtable — Add Lead",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [680, 160]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Webhook — Lead Received').item.json.id }}",
+            "Name": "={{ $('Webhook — Lead Received').item.json.name }}",
+            "Email": "={{ $('Webhook — Lead Received').item.json.email }}",
+            "Phone": "={{ $('Webhook — Lead Received').item.json.phone }}",
+            "Company": "={{ $('Webhook — Lead Received').item.json.company }}",
+            "Role": "={{ $('Webhook — Lead Received').item.json.role }}",
+            "Date": "={{ $('Webhook — Lead Received').item.json.created_at }}"
+          }
+        }
+      },
+      "id": "sheets-append",
+      "name": "Google Sheets — Log Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": { "__rl": true, "mode": "name", "value": "#leads" },
+        "text": ":tada: *New Lead!*\n*Name:* {{ $('Webhook — Lead Received').item.json.name }}\n*Email:* {{ $('Webhook — Lead Received').item.json.email }}\n*Company:* {{ $('Webhook — Lead Received').item.json.company || '—' }}\n*Role:* {{ $('Webhook — Lead Received').item.json.role || '—' }}",
+        "otherOptions": {}
+      },
+      "id": "slack-new-lead",
+      "name": "Slack — Notify New Lead",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [680, 440]
+    },
+    {
+      "parameters": {
+        "fromEmail": "you@example.com",
+        "toEmail": "={{ $('Webhook — Lead Received').item.json.email }}",
+        "subject": "Welcome to LeadFlow, {{ $('Webhook — Lead Received').item.json.name }}!",
+        "emailType": "html",
+        "message": "<h2>Thanks for signing up!</h2><p>Hi {{ $('Webhook — Lead Received').item.json.name }},</p><p>We've received your details and our team will be in touch soon.</p><p>— The LeadFlow Team</p>"
+      },
+      "id": "gmail-welcome",
+      "name": "Gmail — Welcome Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [680, 580]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": { "__rl": true, "mode": "name", "value": "#leads" },
+        "text": ":warning: *Duplicate Lead Detected*\n*Email:* {{ $('Webhook — Lead Received').item.json.email }}\n*Name:* {{ $('Webhook — Lead Received').item.json.name }}\nThis email already exists in the database.",
+        "otherOptions": {}
+      },
+      "id": "slack-duplicate",
+      "name": "Slack — Duplicate Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [680, 740]
+    }
+  ],
+  "connections": {
+    "Webhook — Lead Received": {
+      "main": [[{ "node": "Is Duplicate?", "type": "main", "index": 0 }]]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [{ "node": "Slack — Duplicate Alert", "type": "main", "index": 0 }],
+        [
+          { "node": "Airtable — Add Lead", "type": "main", "index": 0 },
+          { "node": "Google Sheets — Log Lead", "type": "main", "index": 0 },
+          { "node": "Slack — Notify New Lead", "type": "main", "index": 0 },
+          { "node": "Gmail — Welcome Email", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}
