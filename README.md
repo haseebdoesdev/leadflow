@@ -1,159 +1,180 @@
 # LeadFlow
 
-A full-stack lead capture and automation demo built for portfolio purposes. A visitor fills out a form → Supabase stores the lead → n8n fires a webhook that fans out to Airtable, Google Sheets, Slack, and Gmail — with duplicate detection built in.
+> A full-stack lead capture and automation system — built as a portfolio demo showcasing modern web + workflow automation integration.
 
 **Live demo:** https://leadflow-three-tau.vercel.app
 
 ---
 
-## Tech Stack
+## What it does
 
-| Layer | Technology |
+A visitor submits a contact form → the lead is saved to Supabase → n8n fires and fans out to four services simultaneously:
+
+- **Airtable** — creates a CRM record
+- **Google Sheets** — appends a row for reporting
+- **Slack** — sends a `#leads` channel notification
+- **Gmail** — sends a welcome email to the lead
+
+Duplicate emails are detected before any of that happens — duplicates get flagged in the database and trigger a separate Slack alert instead.
+
+---
+
+## Architecture
+
+```
+                    ┌─────────────────────────┐
+                    │   leadflow-three-tau     │
+                    │   .vercel.app            │
+                    │                          │
+                    │  / ──── Lead Form        │
+                    │  /dashboard ── Admin     │
+                    │  /login ─── Supabase     │
+                    └────────────┬────────────┘
+                                 │ POST /api/leads
+                    ┌────────────▼────────────┐
+                    │        Supabase          │
+                    │  Postgres + Auth + RLS   │
+                    │  duplicate check here    │
+                    └────────────┬────────────┘
+                                 │ webhook
+                    ┌────────────▼────────────┐
+                    │          n8n             │
+                    │  Normalize Lead Data     │
+                    │         │                │
+                    │   Is Duplicate?          │
+                    │   ├─ YES → Slack alert   │
+                    │   └─ NO  ──────────────┐ │
+                    │          │             │ │
+                    │        Airtable  Sheets│ │
+                    │        Slack     Gmail │ │
+                    └────────────────────────┘─┘
+```
+
+---
+
+## Tech stack
+
+| Layer | Tech |
 |---|---|
 | Frontend | Next.js 14, TypeScript, Tailwind CSS |
-| Database & Auth | Supabase (Postgres + RLS + Auth) |
-| Automation | n8n (self-hosted via Docker) |
+| Database | Supabase — Postgres + Row Level Security |
+| Auth | Supabase Auth (email/password) |
+| Automation | n8n Cloud |
 | CRM | Airtable |
 | Reporting | Google Sheets |
-| Alerts | Slack |
+| Notifications | Slack |
 | Email | Gmail |
 | Hosting | Vercel |
 
 ---
 
-## How It Works
+## Project structure
 
 ```
-Visitor fills form
-      │
-      ▼
-Next.js API Route (/api/leads)
-      │  checks for duplicate email
-      ▼
-Supabase (Postgres + RLS)
-      │  inserts lead, fires webhook
-      ▼
-n8n Webhook Trigger
-      │
-      ├─ is_duplicate = true  ──► Slack: Duplicate Alert
-      │
-      └─ is_duplicate = false
-            │
-            ├──► Airtable: Create record in LeadFlow base
-            ├──► Google Sheets: Append row to Leads sheet
-            ├──► Slack: New lead notification (#leads)
-            └──► Gmail: Welcome email to lead
-```
-
----
-
-## Project Structure
-
-```
-leadflow/                   Next.js app (deploy to Vercel)
+leadflow/                        Next.js app
 ├── src/
 │   ├── app/
-│   │   ├── page.tsx        Public lead capture form
-│   │   ├── dashboard/      Protected admin dashboard
-│   │   ├── login/          Supabase auth login
-│   │   └── api/leads/      POST endpoint — saves lead + triggers n8n
+│   │   ├── page.tsx             Public lead capture form
+│   │   ├── dashboard/page.tsx   Protected admin dashboard
+│   │   ├── login/page.tsx       Auth page
+│   │   └── api/leads/route.ts   POST endpoint
 │   ├── components/
 │   │   ├── LeadForm.tsx
 │   │   └── LeadsTable.tsx
-│   ├── lib/supabase/       Browser + server Supabase clients
-│   └── middleware.ts       Auth guard for /dashboard
-├── supabase/schema.sql     Run once in Supabase SQL editor
-└── .env.local.example      Copy → .env.local and fill in values
+│   ├── lib/supabase/            Browser + server clients
+│   └── middleware.ts            Auth guard
+├── supabase/schema.sql          DB schema + RLS policies
+└── .env.local.example
 
-docker-compose.yml          Spins up n8n at localhost:5678
-n8n-workflows/              Importable workflow JSON (backup copy)
+docker-compose.yml               Local n8n (optional)
+n8n-workflows/                   Exportable workflow JSON
 ```
 
 ---
 
-## Local Setup
+## Running locally
 
-### 1. Supabase
+### 1. Clone and install
 
-The database is already provisioned. Run the schema once:
+```bash
+git clone https://github.com/haseebdoesdev/leadflow.git
+cd leadflow/leadflow
+npm install
+```
 
-- Open your Supabase project → **SQL Editor**
-- Paste and run `leadflow/supabase/schema.sql`
-- Copy your **Project URL** and **anon key** from Project Settings → API
+### 2. Environment variables
 
-### 2. n8n (Docker)
+```bash
+cp .env.local.example .env.local
+```
+
+Fill in `.env.local`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://yueekwequamrgkzztdey.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+N8N_WEBHOOK_URL=https://your-n8n-instance/webhook/lead-received
+```
+
+### 3. Database
+
+Run [`supabase/schema.sql`](leadflow/supabase/schema.sql) in the Supabase SQL editor — creates the `leads` table with RLS policies.
+
+### 4. Run
+
+```bash
+npm run dev
+# → http://localhost:3000
+```
+
+### 5. n8n (optional — local)
 
 ```bash
 # from repo root
 docker compose up -d
+# → http://localhost:5678
+# Import n8n-workflows/lead-automation.json
 ```
 
-Open `http://localhost:5678` and connect credentials:
+---
 
-| Credential | Type in n8n |
-|---|---|
-| Airtable | Personal Access Token |
-| Google Sheets | OAuth2 |
-| Slack | Bot Token (OAuth2) |
-| Gmail | OAuth2 |
+## n8n workflow
 
-> The workflow **LeadFlow — New Lead Automation** is already created in your n8n instance. Open it, connect the credentials above, then activate it.
+The workflow (`n8n-workflows/lead-automation.json`) has 8 nodes:
 
-After activating, copy the webhook URL (looks like `http://localhost:5678/webhook/lead-received`) into your `.env.local`.
-
-For Vercel deployments, expose n8n publicly with:
-```bash
-npx ngrok http 5678
+```
+Webhook → Normalize Data → Is Duplicate?
+                               ├── true  → Slack duplicate alert
+                               └── false → Airtable
+                                         → Google Sheets
+                                         → Slack new lead
+                                         → Gmail welcome email
 ```
 
-### 3. Next.js app
+Credentials needed in n8n: Airtable PAT, Google OAuth2 (Sheets + Gmail), Slack Bot Token.
+
+---
+
+## Dashboard
+
+The `/dashboard` route is protected by Supabase Auth. To create an admin account:
+
+1. Supabase dashboard → **Authentication → Users → Add user**
+2. Visit `/login` on the live site
+
+---
+
+## Deployment
+
+Deployed on Vercel. Environment variables set via CLI:
 
 ```bash
 cd leadflow
-cp .env.local.example .env.local
-# Fill in NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, N8N_WEBHOOK_URL
-
-npm install
-npm run dev
+vercel env add NEXT_PUBLIC_SUPABASE_URL production
+vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
+vercel env add N8N_WEBHOOK_URL production
+vercel --prod
 ```
-
-Visit `http://localhost:3000` — submit the form, check Airtable + Slack.
-
-### 4. Google Sheets
-
-- Create a new Google Sheet named **LeadFlow**
-- Add a sheet tab called **Leads** with headers: `ID, Name, Email, Phone, Company, Role, Date`
-- In n8n → **Log Lead to Google Sheets** node → replace `REPLACE_WITH_YOUR_SHEET_ID` with your sheet's ID (from the URL)
-
----
-
-## Deployment (Vercel)
-
-The Next.js app is deployed on Vercel. Add these environment variables in the Vercel project settings:
-
-```
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-N8N_WEBHOOK_URL=https://your-ngrok-url.ngrok.io/webhook/lead-received
-```
-
----
-
-## Dashboard Access
-
-The `/dashboard` route is protected by Supabase Auth.
-
-1. Go to your Supabase project → **Authentication → Users**
-2. Click **Add user** → create an email/password account
-3. Visit `<your-domain>/login` and sign in
-
----
-
-## Features
-
-- **Duplicate detection** — same email submitted twice? n8n catches it, skips Airtable/Sheets/Gmail, and pings Slack with a duplicate alert
-- **RLS policies** — anon users can insert leads, only authenticated users can read them
-- **Real-time dashboard** — admin view shows all leads with new/duplicate status badges and stats
 
 ---
 
