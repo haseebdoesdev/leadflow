@@ -23,18 +23,16 @@ export async function POST(req: NextRequest) {
 
   const is_duplicate = !!existing;
 
-  const { data: lead, error } = await supabase
-    .from("leads")
-    .insert({
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      phone: phone || null,
-      company: company || null,
-      role: role || null,
-      is_duplicate,
-    })
-    .select()
-    .single();
+  const payload = {
+    name: name.trim(),
+    email: email.toLowerCase().trim(),
+    phone: phone || null,
+    company: company || null,
+    role: role || null,
+    is_duplicate,
+  };
+
+  const { error } = await supabase.from("leads").insert(payload);
 
   if (error) {
     console.error("Supabase insert error:", error);
@@ -47,9 +45,9 @@ export async function POST(req: NextRequest) {
     fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...lead }),
+      body: JSON.stringify(payload),
     }).catch((err) => console.error("n8n webhook error:", err));
   }
 
-  return NextResponse.json({ success: true, duplicate: is_duplicate, id: lead.id });
+  return NextResponse.json({ success: true, duplicate: is_duplicate });
 }
