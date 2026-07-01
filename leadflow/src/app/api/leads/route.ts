@@ -39,14 +39,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to save lead." }, { status: 500 });
   }
 
-  // Fire-and-forget: trigger n8n webhook
   const webhookUrl = process.env.N8N_WEBHOOK_URL;
   if (webhookUrl) {
-    fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }).catch((err) => console.error("n8n webhook error:", err));
+    try {
+      const n8nRes = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!n8nRes.ok) {
+        const text = await n8nRes.text();
+        console.error("n8n webhook returned", n8nRes.status, text);
+      }
+    } catch (err) {
+      console.error("n8n webhook error:", err);
+    }
   }
 
   return NextResponse.json({ success: true, duplicate: is_duplicate });
